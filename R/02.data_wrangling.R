@@ -4,7 +4,7 @@ library(readxl)
 library(janitor)
 
 
-###################################################################### I ### Load data
+###################################################################### I ### CMML Load data
 path <- fs::path("", "Volumes", "Gillis_Research", "Lab_Data", "MDSProteomics")
 
 manifest <- 
@@ -120,7 +120,7 @@ write_csv(wide_cmml_data,
                  str_remove_all(today(), "-"), ".csv"))
 
 
-###################################################################### III ### Add and rename variables
+###################################################################### III ### CMML Add and rename variables
 wide_cmml_data <- wide_cmml_data %>% 
   rename(vital_status = death_status,
          os_date = os) %>% 
@@ -143,14 +143,71 @@ wide_cmml_data <- wide_cmml_data %>%
 
 write_csv(wide_cmml_data, 
           paste0("data/processed_data",
-                 "/MDSProteomics_cmml_analysisdata_", 
+                 "/MDSProteomics_CMML_dataWide_", 
                  str_remove_all(today(), "-"), ".csv"))
 
 write_csv(wide_cmml_data, 
           paste0(path, "/ProcessedData",
-                 "/MDSProteomics_cmml_analysisdata_", 
+                 "/MDSProteomics_CMML_dataWide_", 
                  str_remove_all(today(), "-"), ".csv"))
 
 
 # END CMML----
+
+# Start MDS----
+
+## Import library
+library(tidyverse)
+library(readxl)
+library(janitor)
+
+
+###################################################################### I ### MDS Load data
+path <- fs::path("", "Volumes", "Gillis_Research", "Lab_Data", "MDSProteomics")
+
+manifest <- 
+  readxl::read_xlsx(paste0(path, "/ProcessedData",
+                           "/MDSProteomics_SampleManifest_v2_20251013.xlsx"))
+clinical_data <-
+  read_csv(paste0(path, 
+                  "/RawData/MDSProteomics_NHSClinicalData_20251002",
+                  "/demo_disp_data_20250919.csv")) %>% 
+  clean_names()
+progression_data <-
+  read_csv(paste0(path, 
+                  "/RawData/MDSProteomics_NHSClinicalData_20251002",
+                  "/progression_data_20251017.csv")) %>% 
+  clean_names()
+plate_read <-
+  read.csv(paste0(path, 
+                  "/RawData/MDSProteomics_OlinkData_20251021",
+                  "/Gillis_3plates_Extended_NPX_2025-10-21.csv"))
+
+###################################################################### II ### MDS data wrangling
+manifest <- manifest %>% 
+  filter(disease_type == "MDS") %>% 
+  select(sample_name, WellID = plate_well_id, 
+         plate, SampleID = sample_id, mdsepid = study_id, collectiondt_days,
+         original_sampleid, sample_id_used_for_pilot) %>% 
+  distinct(mdsepid, collectiondt_days, .keep_all = TRUE)
+
+progression_data <- progression_data %>% 
+  group_by(mdsepid) %>% 
+  # mutate(n = row_number()) %>% # same as progression_num
+  mutate(first_progression_time = case_when(
+    progression_num == 1             ~ progression_date
+  )) %>% 
+  mutate(first_progression_type = case_when(
+    progression_num == 1             ~ progression_event
+  )) %>% 
+  fill(first_progression_time, first_progression_type, .direction = "updown") %>% 
+  ungroup() %>% 
+  select(-c(progression_category, progression_num))
+
+
+
+
+
+
+
 
