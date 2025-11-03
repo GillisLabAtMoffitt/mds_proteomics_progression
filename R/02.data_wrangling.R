@@ -34,6 +34,13 @@ plate_read <-
                   "/RawData/MDSProteomics_OlinkData_20251021",
                   "/Gillis_3plates_Extended_NPX_2025-10-21.csv"))
 
+missing_date <- 
+  read.csv(paste0(path, 
+                  "/RawData/MDSProteomics_CMMLClinicalData",
+                  "/MDSProteomics_missing_dates_20251103.csv")) %>% 
+  mutate(mrn = as.character(mrn))
+
+
 ###################################################################### II ### CMML data wrangling
 manifest <- manifest %>% 
   filter(disease_type == "CMML") %>% 
@@ -43,12 +50,20 @@ manifest <- manifest %>%
   distinct(study_id, collection_date, .keep_all = TRUE)
 
 enrollment_data <- enrollment_data %>% 
-  select(SampleID, mrn, enrolldate) %>% 
+  select(mrn, enrolldate) %>% 
   mutate(mrn = as.character(mrn)) %>% 
-  distinct()
+  distinct() %>% 
+  filter(!is.na(mrn)) %>% 
+  full_join(., missing_date %>% 
+              select(mrn, enrolldate_new) %>% 
+              filter(!is.na(enrolldate_new)) %>% 
+              mutate(enrolldate_new = as.Date(enrolldate_new)),
+            by = "mrn") %>% 
+  mutate(enrolldate = coalesce(enrolldate, enrolldate_new)) %>% 
+  select(mrn, enrolldate)
 
 clinical_data <- clinical_data %>% 
-  filter(str_detect(SampleID, "CMML_")) %>% 
+  # filter(str_detect(SampleID, "CMML_")) %>% 
   select(SampleID, MRN, collection_date,
          PD_overall : AIE) %>% 
   distinct() %>% 
@@ -56,7 +71,15 @@ clinical_data <- clinical_data %>%
     !is.na(collection_date)             ~ collection_date,
     is.na(collection_date)              ~ as.Date("2024-07-10")
   )) %>% 
-  mutate(MRN = as.character(MRN))
+  mutate(MRN = as.character(MRN)) %>% 
+  full_join(., missing_date %>% 
+              select(mrn, death_status_new, os_new) %>% 
+              filter(!is.na(os_new)) %>% 
+              mutate(os_new = as.Date(os_new)),
+            by = c("MRN" = "mrn")) %>% 
+  mutate(death_status = coalesce(death_status_new, death_status)) %>% 
+  mutate(os = coalesce(os_new, os)) %>% 
+  select(-c(death_status_new, os_new))
 
 plate_read <- plate_read %>% 
   # bind_rows(plate1_read, plate2_read, .id = "PlateID") %>%
@@ -71,7 +94,7 @@ wide_reads <- manifest %>%
   inner_join(., clinical_data, 
              by = c("SampleID", "collection_date")) %>% 
   inner_join(., enrollment_data, 
-             by = c("SampleID", "MRN" = "mrn")) %>% 
+             by = c("MRN" = "mrn")) %>% 
   # distinct(SampleID, WellID, PlateID)
   arrange(MRN, collection_date) %>% 
   select(MRN, collection_date, everything()) %>% 
@@ -204,7 +227,22 @@ progression_data <- progression_data %>%
   ungroup() %>% 
   select(-c(progression_category, progression_num))
 
+progression_data <- progression_data %>% 
+  rename(pfs_time = progression_date) %>% 
+  pivot_wider(
+    names_from = progression_event,
+    values_from = pfs_time, 
+    names_glue = "{.value}_{str_c(progression_event, '_event')}"
+  )
 
+clinical_data <- clinical_data %>% 
+  select(mdsepid, death_dt, ltfu_dt)
+
+plate_read <- plate_read %>% 
+  # bind_rows(plate1_read, plate2_read, .id = "PlateID") %>%
+  filter(str_detect(SampleID, "MDS_")) %>% 
+  filter(AssayQC == "PASS") %>% 
+  select(SampleID, PlateID, WellID, PCNormalizedNPX, Assay)
 
 
 
