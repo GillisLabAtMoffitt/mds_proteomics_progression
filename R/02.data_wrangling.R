@@ -14,11 +14,15 @@ clinical_data <-
   read_csv(paste0(path, 
                   "/RawData/MDSProteomics_CMMLClinicalData",
                   "/MDSProteomics_CMML_Merged_Long_20251027.csv"))
+# enrollment_data <-
+#   read_csv(paste0(path,
+#                   "/RawData/MDSProteomics_CMMLClinicalData",
+#                   "/MDSProteomics_CMML_ClinicalData_20251021.csv"))
 enrollment_data <-
   read_csv(paste0(path, 
-                  "/RawData/MDSProteomics_CMMLClinicalData",
-                  "/MDSProteomics_CMML_ClinicalData_20251021.csv"))
-
+                  "/ProcessedData",
+                  "/MDSProteomics_UpdatedEnrollmentdate_20251105.csv")) %>% 
+  janitor::clean_names()
 # plate1_read <-
 #   read.csv(paste0(path, 
 #                   "/RawData/MDSProteomics_OlinkData_20251017",
@@ -49,29 +53,35 @@ manifest <- manifest %>%
   mutate(collection_date = as.Date(collection_date)) %>% 
   distinct(study_id, collection_date, .keep_all = TRUE)
 
-enrollment_data <- enrollment_data %>% 
-  select(mrn, enrolldate) %>% 
+enrollment_data <- enrollment_data %>%
   mutate(mrn = as.character(mrn)) %>% 
-  distinct() %>% 
-  filter(!is.na(mrn)) %>% 
-  full_join(., missing_date %>% 
-              select(mrn, enrolldate_new) %>% 
-              filter(!is.na(enrolldate_new)) %>% 
-              mutate(enrolldate_new = as.Date(enrolldate_new)),
-            by = "mrn") %>% 
-  mutate(enrolldate = coalesce(enrolldate, enrolldate_new)) %>% 
-  select(mrn, enrolldate)
+  select(mrn, sample_id, 
+         enrolldate = updated_enrolldate, 
+         collection_date)
+
+# enrollment_data <- enrollment_data %>% 
+#   select(mrn, enrolldate) %>% 
+#   mutate(mrn = as.character(mrn)) %>% 
+#   distinct() %>%
+#   filter(!is.na(mrn)) %>% 
+#   full_join(., missing_date %>% 
+#               select(mrn, enrolldate_new) %>%
+#               filter(!is.na(enrolldate_new)) %>%
+#               mutate(enrolldate_new = as.Date(enrolldate_new)),
+#             by = "mrn") %>%
+#   mutate(enrolldate = coalesce(enrolldate, enrolldate_new)) %>%
+#   select(mrn, enrolldate)
 
 clinical_data <- clinical_data %>% 
-  # filter(str_detect(SampleID, "CMML_")) %>% 
-  select(SampleID, MRN, collection_date,
+  filter(str_detect(SampleID, "CMML_")) %>%
+  mutate(MRN = as.character(MRN)) %>% 
+  select(SampleID, MRN, #collection_date,
          PD_overall : AIE) %>% 
   distinct() %>% 
-  mutate(collection_date = case_when(
-    !is.na(collection_date)             ~ collection_date,
-    is.na(collection_date)              ~ as.Date("2024-07-10")
-  )) %>% 
-  mutate(MRN = as.character(MRN)) %>% 
+  # mutate(collection_date = case_when(
+  #   !is.na(collection_date)             ~ collection_date,
+  #   is.na(collection_date)              ~ as.Date("2024-07-10")
+  # )) %>% 
   full_join(., missing_date %>% 
               select(mrn, death_status_new, os_new) %>% 
               filter(!is.na(os_new)) %>% 
@@ -92,9 +102,12 @@ plate_read <- plate_read %>%
 wide_reads <- manifest %>% 
   # Use inner join to filter out the duplicate samples
   inner_join(., clinical_data, 
-             by = c("SampleID", "collection_date")) %>% 
+             by = c("SampleID")) %>% 
+  # inner_join(., enrollment_data, 
+  #            by = c("MRN" = "mrn")) %>% 
   inner_join(., enrollment_data, 
-             by = c("MRN" = "mrn")) %>% 
+             by = c("MRN" = "mrn", "SampleID" = "sample_id", 
+                    "collection_date")) %>% 
   # distinct(SampleID, WellID, PlateID)
   arrange(MRN, collection_date) %>% 
   select(MRN, collection_date, everything()) %>% 
